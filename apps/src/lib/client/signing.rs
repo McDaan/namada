@@ -7,7 +7,6 @@ use namada::proto::Tx;
 use namada::types::address::{Address, ImplicitAddress};
 use namada::types::hash::Hash;
 use namada::types::key::*;
-use namada::types::storage::Epoch;
 use namada::types::token;
 use namada::types::token::Amount;
 use namada::types::transaction::{hash_tx, Fee, WrapperTx, MIN_FEE};
@@ -162,17 +161,12 @@ pub async fn sign_tx(
         dump_tx_helper(&ctx, &tx, "signed", None);
     }
 
-    let epoch = rpc::query_and_print_epoch(args::Query {
-        ledger_address: args.ledger_address.clone(),
-    })
-    .await;
     let broadcast_data = if args.dry_run {
         TxBroadcastData::DryRun(tx)
     } else {
         sign_wrapper(
             &ctx,
             args,
-            epoch,
             tx,
             &keypair,
             #[cfg(not(feature = "mainnet"))]
@@ -230,7 +224,6 @@ pub fn dump_tx_helper(
 pub async fn sign_wrapper(
     ctx: &Context,
     args: &args::Tx,
-    epoch: Epoch,
     tx: Tx,
     keypair: &common::SecretKey,
     #[cfg(not(feature = "mainnet"))] requires_pow: bool,
@@ -293,7 +286,6 @@ pub async fn sign_wrapper(
                 token: fee_token,
             },
             keypair,
-            epoch,
             args.gas_limit.clone(),
             tx,
             // TODO: Actually use the fetched encryption key
@@ -310,7 +302,7 @@ pub async fn sign_wrapper(
     let decrypted_hash = tx.tx_hash.to_string();
     TxBroadcastData::Wrapper {
         tx: tx
-            .sign(keypair, ctx.config.ledger.chain_id.clone())
+            .sign(keypair, ctx.config.ledger.chain_id.clone(), args.expiration)
             .expect("Wrapper tx signing keypair should be correct"),
         wrapper_hash,
         decrypted_hash,
