@@ -2052,9 +2052,9 @@ fn pos_rewards() -> Result<()> {
     client.assert_success();
 
     // Check that all validator nodes processed the tx with same result
-    let mut validator_0 = bg_validator_0.foreground();
-    let mut validator_1 = bg_validator_1.foreground();
-    let mut validator_2 = bg_validator_2.foreground();
+    let validator_0 = bg_validator_0.foreground();
+    let validator_1 = bg_validator_1.foreground();
+    let validator_2 = bg_validator_2.foreground();
 
     // let expected_result = "all VPs accepted transaction";
     // validator_0.exp_string(expected_result)?;

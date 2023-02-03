@@ -361,7 +361,7 @@ where
         );
         println!("TOTAL NAM BALANCE = {}", total_nam_balance);
         println!("TOTAL STAKED NAM BALANCE = {}\n", total_staked_nam_tokens);
-        self.storage
+        self.wl_storage
             .write(
                 &total_supply_key(&staking_token_address()),
                 total_nam_balance
@@ -371,7 +371,7 @@ where
             .expect("unable to set total NAM balance in storage");
 
         // Set the ratio of staked to total NAM tokens in the parameters storage
-        self.storage
+        self.wl_storage
             .write(
                 &get_staked_ratio_key(),
                 (Decimal::from(total_staked_nam_tokens)
