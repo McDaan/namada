@@ -1424,7 +1424,7 @@ mod test_process_proposal {
             },
             &keypair,
             0.into(),
-            tx.clone(),
+            tx,
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
             None,
