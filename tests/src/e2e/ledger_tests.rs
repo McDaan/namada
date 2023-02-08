@@ -1815,13 +1815,13 @@ fn pos_bonds() -> Result<()> {
 
     let validator_one_rpc = get_actor_rpc(&test, &Who::Validator(0));
 
-    // 2. Submit a self-bond for the gepnesis validator
+    // 2. Submit a self-bond for the genesis validator
     let tx_args = vec![
         "bond",
         "--validator",
         "validator-0",
         "--amount",
-        "100",
+        "10000.0",
         "--gas-amount",
         "0",
         "--gas-limit",
@@ -1844,7 +1844,7 @@ fn pos_bonds() -> Result<()> {
         "--source",
         BERTHA,
         "--amount",
-        "200",
+        "5000.0",
         "--gas-amount",
         "0",
         "--gas-limit",
@@ -1864,7 +1864,7 @@ fn pos_bonds() -> Result<()> {
         "--validator",
         "validator-0",
         "--amount",
-        "51",
+        "5100.0",
         "--gas-amount",
         "0",
         "--gas-limit",
@@ -1876,7 +1876,7 @@ fn pos_bonds() -> Result<()> {
     ];
     let mut client =
         run_as!(test, Who::Validator(0), Bin::Client, tx_args, Some(40))?;
-    client.exp_string("Amount 51 withdrawable starting from epoch ")?;
+    client.exp_string("Amount 5100 withdrawable starting from epoch ")?;
     client.assert_success();
 
     // 5. Submit an unbond of the delegation
@@ -1887,7 +1887,7 @@ fn pos_bonds() -> Result<()> {
         "--source",
         BERTHA,
         "--amount",
-        "32",
+        "3200.",
         "--gas-amount",
         "0",
         "--gas-limit",
@@ -1898,7 +1898,7 @@ fn pos_bonds() -> Result<()> {
         &validator_one_rpc,
     ];
     let mut client = run!(test, Bin::Client, tx_args, Some(40))?;
-    let expected = "Amount 32 withdrawable starting from epoch ";
+    let expected = "Amount 3200 withdrawable starting from epoch ";
     let (_unread, matched) = client.exp_regex(&format!("{expected}.*\n"))?;
     let epoch_raw = matched
         .trim()
@@ -1920,7 +1920,7 @@ fn pos_bonds() -> Result<()> {
         epoch, delegation_withdrawable_epoch
     );
     let start = Instant::now();
-    let loop_timeout = Duration::new(20, 0);
+    let loop_timeout = Duration::new(40, 0);
     loop {
         if Instant::now().duration_since(start) > loop_timeout {
             panic!(
@@ -1972,7 +1972,161 @@ fn pos_bonds() -> Result<()> {
     let mut client = run!(test, Bin::Client, tx_args, Some(40))?;
     client.exp_string("Transaction is valid.")?;
     client.assert_success();
+    Ok(())
+}
 
+/// TODO
+#[test]
+fn pos_rewards() -> Result<()> {
+    let test = setup::network(
+        |genesis| {
+            let parameters = ParametersConfig {
+                min_num_of_blocks: 3,
+                epochs_per_year: 31_536_000,
+                max_expected_time_per_block: 1,
+                ..genesis.parameters
+            };
+            let pos_params = PosParamsConfig {
+                pipeline_len: 2,
+                unbonding_len: 4,
+                ..genesis.pos_params
+            };
+            let genesis = GenesisConfig {
+                parameters,
+                pos_params,
+                ..genesis
+            };
+            setup::set_validators(3, genesis, default_port_offset)
+        },
+        None,
+    )?;
+
+    println!("\nFINISHED SETUP\n");
+
+    // 1. Run 3 genesis validator ledger nodes
+    let mut validator_0 =
+        run_as!(test, Who::Validator(0), Bin::Node, &["ledger"], Some(40))?;
+    validator_0.exp_string("Namada ledger node started")?;
+    validator_0.exp_string("This node is a validator")?;
+
+    let mut validator_1 =
+        run_as!(test, Who::Validator(1), Bin::Node, &["ledger"], Some(40))?;
+    validator_1.exp_string("Namada ledger node started")?;
+    validator_1.exp_string("This node is a validator")?;
+
+    let mut validator_2 =
+        run_as!(test, Who::Validator(2), Bin::Node, &["ledger"], Some(40))?;
+    validator_2.exp_string("Namada ledger node started")?;
+    validator_2.exp_string("This node is a validator")?;
+
+    let bg_validator_0 = validator_0.background();
+    let bg_validator_1 = validator_1.background();
+    let bg_validator_2 = validator_2.background();
+
+    let validator_zero_rpc = get_actor_rpc(&test, &Who::Validator(0));
+    let validator_one_rpc = get_actor_rpc(&test, &Who::Validator(1));
+    let validator_two_rpc = get_actor_rpc(&test, &Who::Validator(2));
+    println!("\nDBG0\n");
+    // Submit a delegation from Bertha to validator-0
+    let tx_args = vec![
+        "bond",
+        "--validator",
+        "validator-0",
+        "--source",
+        BERTHA,
+        "--amount",
+        "10000.0",
+        "--gas-amount",
+        "0",
+        "--gas-limit",
+        "0",
+        "--gas-token",
+        NAM,
+        "--ledger-address",
+        &validator_zero_rpc,
+    ];
+    println!("\nDBG1\n");
+
+    let mut client = run!(test, Bin::Client, tx_args, Some(40))?;
+    client.exp_string("Transaction is valid.")?;
+    client.assert_success();
+
+    // Check that all validator nodes processed the tx with same result
+    let validator_0 = bg_validator_0.foreground();
+    let validator_1 = bg_validator_1.foreground();
+    let validator_2 = bg_validator_2.foreground();
+
+    // let expected_result = "all VPs accepted transaction";
+    // validator_0.exp_string(expected_result)?;
+    // validator_1.exp_string(expected_result)?;
+    // validator_2.exp_string(expected_result)?;
+
+    let _bg_validator_0 = validator_0.background();
+    let _bg_validator_1 = validator_1.background();
+    let _bg_validator_2 = validator_2.background();
+
+    // Let validator-1 self-bond
+    let tx_args = vec![
+        "bond",
+        "--validator",
+        "validator-1",
+        "--amount",
+        "30000.0",
+        "--gas-amount",
+        "0",
+        "--gas-limit",
+        "0",
+        "--gas-token",
+        NAM,
+        "--ledger-address",
+        &validator_one_rpc,
+    ];
+    let mut client =
+        run_as!(test, Who::Validator(1), Bin::Client, tx_args, Some(40))?;
+    client.exp_string("Transaction is valid.")?;
+    client.assert_success();
+
+    // Let validator-2 self-bond
+    let tx_args = vec![
+        "bond",
+        "--validator",
+        "validator-2",
+        "--amount",
+        "25000.0",
+        "--gas-amount",
+        "0",
+        "--gas-limit",
+        "0",
+        "--gas-token",
+        NAM,
+        "--ledger-address",
+        &validator_two_rpc,
+    ];
+    let mut client =
+        run_as!(test, Who::Validator(2), Bin::Client, tx_args, Some(40))?;
+    client.exp_string("Transaction is valid.")?;
+    client.assert_success();
+    println!("\nDBG7\n");
+
+    // Wait some epochs
+    let epoch = get_epoch(&test, &validator_zero_rpc)?;
+    let wait_epoch = epoch + 4_u64;
+    println!(
+        "Current epoch: {}, earliest epoch for withdrawal: {}",
+        epoch, wait_epoch
+    );
+
+    let start = Instant::now();
+    let loop_timeout = Duration::new(40, 0);
+    loop {
+        if Instant::now().duration_since(start) > loop_timeout {
+            panic!("Timed out waiting for epoch: {}", wait_epoch);
+        }
+        let epoch = get_epoch(&test, &validator_zero_rpc)?;
+        if dbg!(epoch) >= wait_epoch {
+            break;
+        }
+    }
     Ok(())
 }
 
@@ -2263,7 +2417,7 @@ fn proposal_submission() -> Result<()> {
             let parameters = ParametersConfig {
                 epochs_per_year: epochs_per_year_from_min_duration(1),
                 max_proposal_bytes: Default::default(),
-                min_num_of_blocks: 1,
+                min_num_of_blocks: 2,
                 max_expected_time_per_block: 1,
                 vp_whitelist: Some(get_all_wasms_hashes(
                     &working_dir,
