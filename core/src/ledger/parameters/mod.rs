@@ -36,6 +36,8 @@ pub struct Parameters {
     pub max_expected_time_per_block: DurationSecs,
     /// Max payload size, in bytes, for a tx batch proposal.
     pub max_proposal_bytes: ProposalBytes,
+    /// Max gas for block
+    pub max_block_gas: u64,
     /// Whitelisted validity predicate hashes (read only)
     pub vp_whitelist: Vec<String>,
     /// Whitelisted tx hashes (read only)
@@ -112,6 +114,7 @@ impl Parameters {
             epoch_duration,
             max_expected_time_per_block,
             max_proposal_bytes,
+            max_block_gas,
             vp_whitelist,
             tx_whitelist,
             implicit_vp,
@@ -135,6 +138,15 @@ impl Parameters {
                 "Max proposal bytes parameter must be initialized in the \
                  genesis block",
             );
+
+        // write max block gas parameter
+        let max_block_gas_key = storage::get_max_block_gas_key();
+        let max_block_gas_value = encode(&max_block_gas);
+        storage
+            .write(&max_block_gas_key, max_block_gas_value)
+            .expect(
+            "Max block gas parameter must be initialized in the genesis block",
+        );
 
         // write epoch parameters
         let epoch_key = storage::get_epoch_duration_storage_key();
@@ -504,6 +516,17 @@ where
         (value, gas)
     };
 
+    // read max block gas
+    let (max_block_gas, gas_max_block_gas) = {
+        let key = storage::get_max_block_gas_key();
+        let (value, gas) =
+            storage.read(&key).map_err(ReadError::StorageError)?;
+        let value: u64 = decode(value.ok_or(ReadError::ParametersMissing)?)
+            .map_err(ReadError::StorageTypeError)?;
+
+        (value, gas)
+    };
+
     // read epoch duration
     let (epoch_duration, gas_epoch) = read_epoch_duration_parameter(storage)
         .expect("Couldn't read epoch duration parameters");
@@ -612,6 +635,7 @@ where
         gas_staked,
         gas_reward,
         gas_proposal_bytes,
+        gas_max_block_gas,
         gas_faucet_account,
         gas_wrapper_tx_fees,
     ]
@@ -627,6 +651,7 @@ where
             epoch_duration,
             max_expected_time_per_block,
             max_proposal_bytes,
+            max_block_gas,
             vp_whitelist,
             tx_whitelist,
             implicit_vp,

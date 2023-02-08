@@ -975,6 +975,7 @@ mod tests {
             };
             let mut parameters = Parameters {
                 max_proposal_bytes: Default::default(),
+                max_block_gas: 0,
                 epoch_duration: epoch_duration.clone(),
                 max_expected_time_per_block: Duration::seconds(max_expected_time_per_block).into(),
                 vp_whitelist: vec![],
