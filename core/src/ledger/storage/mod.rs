@@ -732,6 +732,15 @@ where
             >= self.next_epoch_min_start_height
             && time >= self.next_epoch_min_start_time;
 
+        println!(
+            "Next epoch min start height = {}",
+            self.next_epoch_min_start_height.0 + 2
+        );
+        println!(
+            "Epoch duration satisfied = {}",
+            current_epoch_duration_satisfied
+        );
+
         if current_epoch_duration_satisfied {
             if !self.epoch_update_tracker.0 {
                 self.epoch_update_tracker = (true, 2);
