@@ -66,12 +66,21 @@ where
     ) -> Vec<TxResult> {
         let mut tx_queue_iter = self.wl_storage.storage.tx_queue.iter();
         let mut temp_wl_storage = TempWlStorage::new(&self.wl_storage.storage);
+        let mut temp_block_gas_meter =
+            BlockGasMeter::new(
+                self.read_storage_key(
+                    &parameters::storage::get_max_block_gas_key(),
+                )
+                .expect("Missing parameter in storage"),
+            );
+
         txs.iter()
             .map(|tx_bytes| {
                 let result = self.process_single_tx(
                     tx_bytes,
                     &mut tx_queue_iter,
                     &mut temp_wl_storage,
+                    &mut temp_block_gas_meter,
                     block_time,
                 );
                 if let ErrorCodes::Ok =
@@ -111,6 +120,7 @@ where
         tx_bytes: &[u8],
         tx_queue_iter: &mut impl Iterator<Item = &'a WrapperTxInQueue>,
         temp_wl_storage: &mut TempWlStorage<D, H>,
+        temp_block_gas_meter: &mut BlockGasMeter,
         block_time: DateTimeUtc,
     ) -> TxResult {
         let tx = match Tx::try_from(tx_bytes) {
@@ -178,6 +188,8 @@ where
                     }
                 }
                 TxType::Decrypted(tx) => {
+                    //FIXME: check also here if the decrypted gas exceeds the allocated one in the corresponding wrapper?
+                    //    This check won't workn once we implement a runtime gas meter
                     match tx_queue_iter.next() {
                         Some(wrapper) => {
                             if wrapper.tx.tx_hash != tx.hash_commitment() {
@@ -271,6 +283,18 @@ where
                                 ),
                             };
                         }
+                    }
+
+                    // Max block gas and cumulated block gas
+                    if let Err(_) =
+                        temp_block_gas_meter.add(From::from(&wrapper.gas_limit))
+                    {
+                        return TxResult {
+                            code: ErrorCodes::BlockGasLimit.into(),
+                            info:
+                    "Wrapper transaction exceeds the maximum block gas limit"
+                        .to_string()
+                            };
                     }
 
                     // validate the ciphertext via Ferveo
