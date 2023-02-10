@@ -97,7 +97,8 @@ where
                                 * based on the code size. We dont
                                 * need it here. */
                             TxIndex::default(),
-                            &mut BlockGasMeter::default(),
+                            // Generate a new gas meter so that governance proposals do not account for gas
+                            &mut BlockGasMeter::new(u64::MAX), // No gas limit for governance proposals
                             &mut shell.wl_storage.write_log,
                             &shell.wl_storage.storage,
                             &mut shell.vp_wasm_cache,

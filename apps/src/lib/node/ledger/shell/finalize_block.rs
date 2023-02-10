@@ -43,8 +43,13 @@ where
         &mut self,
         req: shim::request::FinalizeBlock,
     ) -> Result<shim::response::FinalizeBlock> {
-        // reset gas meter before we start
-        self.gas_meter.reset();
+        let mut gas_meter =
+            BlockGasMeter::new(
+                self.read_storage_key(
+                    &parameters::storage::get_max_block_gas_key(),
+                )
+                .expect("Missing parameter in storage"),
+            );
 
         let mut response = shim::response::FinalizeBlock::default();
         // begin the next block and check if a new epoch began
@@ -305,7 +310,7 @@ where
                         .try_into()
                         .expect("transaction index out of bounds"),
                 ),
-                &mut self.gas_meter,
+                &mut gas_meter,
                 &mut self.wl_storage.write_log,
                 &self.wl_storage.storage,
                 &mut self.vp_wasm_cache,
@@ -392,10 +397,8 @@ where
                     }
 
                     self.wl_storage.drop_tx();
-                    tx_event["gas_used"] = self
-                        .gas_meter
-                        .get_current_transaction_gas()
-                        .to_string();
+                    tx_event["gas_used"] =
+                        gas_meter.get_current_transaction_gas().to_string();
                     tx_event["info"] = msg.to_string();
                     tx_event["code"] = ErrorCodes::WasmRuntimeError.into();
                 }
@@ -419,8 +422,7 @@ where
             self.update_epoch(&mut response);
         }
 
-        let _ = self
-            .gas_meter
+        let _ = gas_meter
             .finalize_transaction()
             .map_err(|_| Error::GasOverflow)?;
 
@@ -442,8 +444,6 @@ where
         byzantine_validators: Vec<Evidence>,
     ) -> (BlockHeight, bool) {
         let height = self.wl_storage.storage.last_height + 1;
-
-        self.gas_meter.reset();
 
         self.wl_storage
             .storage
