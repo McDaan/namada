@@ -93,9 +93,6 @@ where
                             .expect("Should be able to write to storage.");
                         let tx_result = protocol::apply_tx(
                             tx_type,
-                            0, /*  this is used to compute the fee
-                                * based on the code size. We dont
-                                * need it here. */
                             TxIndex::default(),
                             // Generate a new gas meter so that governance proposals do not account for gas
                             &mut BlockGasMeter::new(u64::MAX), // No gas limit for governance proposals
