@@ -8,7 +8,7 @@ use namada::ledger::pos::types::{
     decimal_mult_u64, into_tm_voting_power, VoteInfo,
 };
 use namada::ledger::pos::{
-    consensus_validator_rewards_accumulator_key, namada_proof_of_stake, staking_token_address, ADDRESS as POS_ADDRESS,
+    namada_proof_of_stake, staking_token_address, ADDRESS as POS_ADDRESS,
 };
 use namada::ledger::protocol;
 use namada::ledger::storage_api::StorageRead;
@@ -87,18 +87,6 @@ where
             "BLOCK HEIGHT {} AND EPOCH {}, NEW EPOCH = {}",
             height, current_epoch, new_epoch
         );
-
-        let (current_epoch, _gas) = self.wl_storage.storage.get_current_epoch();
-        let update_for_tendermint =
-            self.wl_storage.storage.epoch_update_tracker.0
-                && self.wl_storage.storage.epoch_update_tracker.1 == 2;
-
-        println!(
-            "BLOCK HEIGHT {} AND EPOCH {}, NEW EPOCH = {}",
-            height, current_epoch, new_epoch
-        );
-
-        let current_epoch = self.wl_storage.storage.block.epoch;
 
         if new_epoch {
             namada::ledger::storage::update_allowed_conversions(
@@ -553,8 +541,13 @@ where
             .update_epoch(height, header_time)
             .expect("Must be able to update epoch");
 
+        println!("\nRECORDING SLASHES FROM EVIDENCE");
         self.record_slashes_from_evidence();
+        println!("\nPROCESSING SLASHES ENQUEUED FOR THIS EPOCH");
+
         self.process_slashes();
+        println!("\nSLASHES PROCESSED");
+
         (height, new_epoch)
     }
 

@@ -241,7 +241,6 @@ where
         }
 
         // Initialize genesis token accounts
-        let mut total_nam_balance = token::Amount::default();
         for genesis::TokenAccount {
             address,
             vp_code_path,
@@ -282,7 +281,6 @@ where
         }
 
         // Initialize genesis validator accounts
-        let mut total_staked_nam_tokens = token::Amount::default();
         for validator in &genesis.validators {
             let vp_code = vp_code_cache.get_or_insert_with(
                 validator.validator_vp_code_path.clone(),
