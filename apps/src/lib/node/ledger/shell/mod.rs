@@ -138,6 +138,7 @@ pub enum ErrorCodes {
     ExpiredTx = 10,
     ExpiredDecryptedTx = 11,
     BlockGasLimit = 12,
+    DecryptedGasLimit = 13,
 }
 
 impl From<ErrorCodes> for u32 {
