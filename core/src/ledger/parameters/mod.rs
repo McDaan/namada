@@ -1,6 +1,8 @@
 //! Protocol parameters
 pub mod storage;
 
+use std::collections::BTreeMap;
+
 use borsh::{BorshDeserialize, BorshSchema, BorshSerialize};
 use rust_decimal::Decimal;
 use thiserror::Error;
@@ -60,6 +62,8 @@ pub struct Parameters {
     #[cfg(not(feature = "mainnet"))]
     /// Fixed fees for a wrapper tx to be accepted
     pub wrapper_tx_fees: Option<token::Amount>,
+    /// Gas table
+    pub gas_table: BTreeMap<String, u64>,
 }
 
 /// Epoch duration. A new epoch begins as soon as both the `min_num_of_blocks`
@@ -127,6 +131,7 @@ impl Parameters {
             faucet_account,
             #[cfg(not(feature = "mainnet"))]
             wrapper_tx_fees,
+            gas_table,
         } = self;
 
         // write max proposal bytes parameter
@@ -153,6 +158,18 @@ impl Parameters {
         let epoch_value = encode(epoch_duration);
         storage.write(&epoch_key, epoch_value).expect(
             "Epoch parameters must be initialized in the genesis block",
+        );
+
+        // write gas table
+        let gas_table_key = storage::get_gas_table_storage_key();
+        let gas_table_value = encode(
+            &gas_table
+                .iter()
+                .map(|(id, gas)| (id.to_lowercase(), gas.clone()))
+                .collect::<BTreeMap<String, u64>>(),
+        );
+        storage.write(&gas_table_key, gas_table_value).expect(
+            "Gas table parameter must be initialized in the genesis block",
         );
 
         // write vp whitelist parameter
@@ -564,6 +581,15 @@ where
         .map_err(ReadError::StorageError)?;
     let implicit_vp = value.ok_or(ReadError::ParametersMissing)?;
 
+    // read gas table
+    let gas_table_key = storage::get_gas_table_storage_key();
+    let (value, gas_gas_table) = storage
+        .read(&gas_table_key)
+        .map_err(ReadError::StorageError)?;
+    let gas_table: BTreeMap<String, u64> =
+        decode(value.ok_or(ReadError::ParametersMissing)?)
+            .map_err(ReadError::StorageTypeError)?;
+
     // read epochs per year
     let epochs_per_year_key = storage::get_epochs_per_year_key();
     let (value, gas_epy) = storage
@@ -627,6 +653,7 @@ where
         gas_epoch,
         gas_tx,
         gas_vp,
+        gas_gas_table,
         gas_time,
         gas_implicit_vp,
         gas_epy,
@@ -664,6 +691,7 @@ where
             faucet_account,
             #[cfg(not(feature = "mainnet"))]
             wrapper_tx_fees,
+            gas_table,
         },
         total_gas_cost,
     ))
