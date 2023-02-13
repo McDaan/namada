@@ -1,5 +1,6 @@
 //! Implementation of the [`RequestPrepareProposal`] ABCI++ method for the Shell
 
+use namada::core::ledger::parameters;
 use namada::ledger::storage::{DBIter, StorageHasher, DB};
 use namada::proto::Tx;
 use namada::types::internal::WrapperTxInQueue;
@@ -45,6 +46,9 @@ where
             // TODO: This should not be hardcoded
             let privkey = <EllipticCurve as PairingEngine>::G2Affine::prime_subgroup_generator();
 
+            let max_block_gas: u64 = self
+                .read_storage_key(&parameters::storage::get_max_block_gas_key())
+                .expect("Missing max_block_gas parameter in storage");
             // TODO: Craft the Ethereum state update tx
             // filter in half of the new txs from Tendermint, only keeping
             // wrappers
@@ -55,42 +59,38 @@ where
                 .into_iter()
                 .map(|tx_bytes| {
                     match Tx::try_from(tx_bytes.as_slice()) {
-                         Ok(tx) => {
+                        Ok(tx) => {
                             let tx_expiration = tx.expiration;
-                            if let Ok(TxType::Wrapper(_)) = process_tx(tx) {
+                            if let Ok(TxType::Wrapper(wrapper)) = process_tx(tx)
+                            {
+                                // Check tx gas limit
+                                if u64::from(&wrapper.gas_limit) > max_block_gas
+                                {
+                                    record::remove(tx_bytes);
+                                }
                                 // Check tx expiration against proposed block
-                                match tx_expiration {
-                                    Some(exp) => {
-                                        match &req.time {
-                                            Some(block_time) => {
-                                                match TryInto::<DateTimeUtc>::try_into(block_time.to_owned()) {
-                                                    Ok(datetime) => {
-                                                        if datetime > exp {
-                                                            record::remove(tx_bytes)
-                                                        } else {
-                                                            record::keep(tx_bytes)
-                                                        }
-                                                    },
-                                                    Err(_) => {
-                                                        // Default to last block datetime which has already been checked by mempool_validate, so accept the tx
-                                                        record::keep(tx_bytes)
-                                                    }
-                                                }
-                                            },
-                                            None => {
-                                                // Default to last block datetime which has already been checked by mempool_validate, so accept the tx
-                                                record::keep(tx_bytes)
+                                // Default to last block datetime which has already been checked by mempool_validate, so accept the tx
+                                if let Some(exp) = tx_expiration {
+                                    if let Some(block_time) = &req.time {
+                                        if let Ok(datetime) =
+                                            TryInto::<DateTimeUtc>::try_into(
+                                                block_time.to_owned(),
+                                            )
+                                        {
+                                            if datetime > exp {
+                                                record::remove(tx_bytes);
                                             }
                                         }
-                                    },
-                                    None => record::keep(tx_bytes)
+                                    }
                                 }
-                           } else {
+
+                                record::keep(tx_bytes)
+                            } else {
                                 record::remove(tx_bytes)
                             }
                         }
                         Err(_) => record::remove(tx_bytes),
-                                        }
+                    }
                 })
                 .take_while(|tx_record| {
                     let new_size = total_proposal_size + tx_record.tx.len();
@@ -112,38 +112,35 @@ where
                     match Tx::try_from(tx_bytes.as_slice()) {
                         Ok(tx) => {
                             let tx_expiration = tx.expiration;
-                            if let Ok(TxType::Wrapper(_)) = process_tx(tx) {
+                            if let Ok(TxType::Wrapper(wrapper)) = process_tx(tx)
+                            {
+                                // Check tx gas limit
+                                if u64::from(&wrapper.gas_limit) > max_block_gas
+                                {
+                                    return None;
+                                }
                                 // Check tx expiration against proposed block
-                                match tx_expiration {
-                                    Some(exp) => {
-                                        match &req.time {
-                                            Some(block_time) => {
-                                                match TryInto::<DateTimeUtc>::try_into(block_time.to_owned()) {
-                                                    Ok(datetime) => {
-                                                        if datetime > exp {
-                                                             None
-                                                        } else {
-                                                            Some(tx_bytes)
-                                                        }
-                                                    },
-                                                    Err(_) => {
-                                                // Default to last block datetime which has already been checked by mempool_validate, so accept the tx
-                                                Some(tx_bytes)
-                                                    }
-                                                }
-                                            },
-                                            None => {
-                                            // Default to last block datetime which has already been checked by mempool_validate, so accept the tx
-                                            Some(tx_bytes)
+                                // Default to last block datetime which has already been checked by mempool_validate, so accept the tx
+                                if let Some(exp) = tx_expiration {
+                                    if let Some(block_time) = &req.time {
+                                        if let Ok(datetime) =
+                                            TryInto::<DateTimeUtc>::try_into(
+                                                block_time.to_owned(),
+                                            )
+                                        {
+                                            if datetime > exp {
+                                                return None;
                                             }
                                         }
-                                    },
-                                    None => Some(tx_bytes)
+                                    }
                                 }
-                           } else {
+
+                                Some(tx_bytes)
+                            } else {
                                 None
                             }
                         }
+
                         Err(_) => None,
                     }
                 })
