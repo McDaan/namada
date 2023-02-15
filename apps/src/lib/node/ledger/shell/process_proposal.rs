@@ -244,7 +244,7 @@ where
                                         .to_lowercase();
                                     let tx_gas_required =
                                         gas_table[tx_hash.as_str()];
-                                    if tx_gas_required
+                                    if tx_gas_required //FIXME: use TxGasMeter?
                                         > u64::from(&wrapper.tx.gas_limit)
                                     {
                                         return TxResult {
@@ -279,6 +279,22 @@ where
                     }
                 }
                 TxType::Wrapper(wrapper) => {
+                    // Account for gas. This is done even if the transaction is later deemed invalid. The block proposer knows whether
+                    // the tx is valid or not so we incentivize the proposer to
+                    // include only valid transaction to avoid wasting block gas limit.
+                    // Max block gas and cumulated block gas
+                                        if let Err(_) = temp_block_gas_meter.finalize_transaction(
+                        
+From::from(&wrapper.gas_limit)                    ) {
+                        return TxResult {
+                            code: ErrorCodes::BlockGasLimit.into(),
+                            
+                            info:
+                    "Wrapper transaction exceeds the maximum block gas limit"
+                        .to_string()
+                        };
+                    }
+
                     // Tx chain id
                     if tx_chain_id != self.chain_id {
                         return TxResult {
@@ -302,18 +318,6 @@ where
                                 ),
                             };
                         }
-                    }
-
-                    // Max block gas and cumulated block gas
-                    if let Err(_) =
-                        temp_block_gas_meter.add(From::from(&wrapper.gas_limit))
-                    {
-                        return TxResult {
-                            code: ErrorCodes::BlockGasLimit.into(),
-                            info:
-                    "Wrapper transaction exceeds the maximum block gas limit"
-                        .to_string()
-                            };
                     }
 
                     // validate the ciphertext via Ferveo

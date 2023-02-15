@@ -1,6 +1,7 @@
 //! Implementation of the [`RequestPrepareProposal`] ABCI++ method for the Shell
 
 use namada::core::ledger::parameters;
+use namada::ledger::gas::BlockGasMeter;
 use namada::ledger::storage::{DBIter, StorageHasher, DB};
 use namada::proto::Tx;
 use namada::types::internal::WrapperTxInQueue;
@@ -46,9 +47,12 @@ where
             // TODO: This should not be hardcoded
             let privkey = <EllipticCurve as PairingEngine>::G2Affine::prime_subgroup_generator();
 
-            let max_block_gas: u64 = self
-                .read_storage_key(&parameters::storage::get_max_block_gas_key())
-                .expect("Missing max_block_gas parameter in storage");
+            let mut temp_block_gas_meter = BlockGasMeter::new(
+                self.read_storage_key(
+                    &parameters::storage::get_max_block_gas_key(),
+                )
+                .expect("Missing max_block_gas parameter in storage"),
+            );
             // TODO: Craft the Ethereum state update tx
             // filter in half of the new txs from Tendermint, only keeping
             // wrappers
@@ -63,11 +67,6 @@ where
                             let tx_expiration = tx.expiration;
                             if let Ok(TxType::Wrapper(wrapper)) = process_tx(tx)
                             {
-                                // Check tx gas limit
-                                if u64::from(&wrapper.gas_limit) > max_block_gas
-                                {
-                                    record::remove(tx_bytes);
-                                }
                                 // Check tx expiration against proposed block
                                 // Default to last block datetime which has already been checked by mempool_validate, so accept the tx
                                 if let Some(exp) = tx_expiration {
@@ -84,7 +83,14 @@ where
                                     }
                                 }
 
-                                record::keep(tx_bytes)
+                                /// Check gas limit
+                                match temp_block_gas_meter
+                                    .try_finalize_transaction(
+                                        wrapper.gas_limit.into(),
+                                    ) {
+                                    Ok(()) => record::keep(tx_bytes),
+                                    Err(_) => record::remove(tx_bytes),
+                                }
                             } else {
                                 record::remove(tx_bytes)
                             }
@@ -114,11 +120,6 @@ where
                             let tx_expiration = tx.expiration;
                             if let Ok(TxType::Wrapper(wrapper)) = process_tx(tx)
                             {
-                                // Check tx gas limit
-                                if u64::from(&wrapper.gas_limit) > max_block_gas
-                                {
-                                    return None;
-                                }
                                 // Check tx expiration against proposed block
                                 // Default to last block datetime which has already been checked by mempool_validate, so accept the tx
                                 if let Some(exp) = tx_expiration {
@@ -135,7 +136,14 @@ where
                                     }
                                 }
 
-                                Some(tx_bytes)
+                                // Check gas limit
+                                match temp_block_gas_meter
+                                    .try_finalize_transaction(
+                                        wrapper.gas_limit.into(),
+                                    ) {
+                                    Ok(()) => Some(tx_bytes),
+                                    Err(_) => None,
+                                }
                             } else {
                                 None
                             }
