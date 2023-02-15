@@ -22,7 +22,8 @@ pub mod wrapper_tx {
 
     /// Minimum fee amount in micro NAMs
     pub const MIN_FEE: u64 = 100;
-    /// TODO: Determine a sane number for this
+    /// FIXME: Determine a sane number for this
+    //FIXME: also in client
     const GAS_LIMIT_RESOLUTION: u64 = 1_000_000;
 
     /// Errors relating to decrypting a wrapper tx and its
@@ -84,23 +85,6 @@ pub mod wrapper_tx {
     #[serde(into = "u64")]
     pub struct GasLimit {
         multiplier: u64,
-    }
-
-    impl GasLimit {
-        /// We refund unused gas up to GAS_LIMIT_RESOLUTION
-        pub fn refund_amount(&self, used_gas: u64) -> Amount {
-            if used_gas < (u64::from(self) - GAS_LIMIT_RESOLUTION) {
-                // we refund only up to GAS_LIMIT_RESOLUTION
-                GAS_LIMIT_RESOLUTION
-            } else if used_gas >= u64::from(self) {
-                // Gas limit was under estimated, no refund
-                0
-            } else {
-                // compute refund
-                u64::from(self) - used_gas
-            }
-            .into()
-        }
     }
 
     /// Round the input number up to the next highest multiple
@@ -315,30 +299,6 @@ pub mod wrapper_tx {
             let limit: GasLimit =
                 serde_json::from_str(&js).expect("Test failed");
             assert_eq!(limit, GasLimit { multiplier: 2 });
-        }
-
-        /// Test that refund is calculated correctly
-        #[test]
-        fn test_gas_limit_refund() {
-            let limit = GasLimit { multiplier: 1 };
-            let refund = limit.refund_amount(GAS_LIMIT_RESOLUTION - 1);
-            assert_eq!(refund, Amount::from(1u64));
-        }
-
-        /// Test that we don't refund more than GAS_LIMIT_RESOLUTION
-        #[test]
-        fn test_gas_limit_too_high_no_refund() {
-            let limit = GasLimit { multiplier: 2 };
-            let refund = limit.refund_amount(GAS_LIMIT_RESOLUTION - 1);
-            assert_eq!(refund, Amount::from(GAS_LIMIT_RESOLUTION));
-        }
-
-        /// Test that if gas usage was underestimated, we issue no refund
-        #[test]
-        fn test_gas_limit_too_low_no_refund() {
-            let limit = GasLimit { multiplier: 1 };
-            let refund = limit.refund_amount(GAS_LIMIT_RESOLUTION + 1);
-            assert_eq!(refund, Amount::from(0u64));
         }
     }
 
