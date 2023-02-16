@@ -242,7 +242,7 @@ where
                                     // Tx gas (partial check)
                                     let tx_hash = Hash::sha256(tx.code)
                                         .to_string()
-                                        .to_lowercase();
+                                        .to_ascii_lowercase();
                                     let tx_gas_required = match gas_table.get(tx_hash.as_str()) {
                                         Some(gas) => gas.to_owned(),
                                         None => return TxResult {
@@ -286,9 +286,8 @@ where
                     }
                 }
                 TxType::Wrapper(wrapper) => {
-                    // Account for gas. This is done even if the transaction is later deemed invalid. The block proposer knows whether
-                    // the tx is valid or not so we incentivize the proposer to
-                    // include only valid transaction to avoid wasting block gas limit.
+                    // Account for gas. This is done even if the transaction is later deemed invalid, to incentivize the proposer to
+                    // include only valid transaction and avoid wasting block gas limit
                     // Max block gas and cumulated block gas
                                         if let Err(_) = temp_block_gas_meter.finalize_transaction(
                         

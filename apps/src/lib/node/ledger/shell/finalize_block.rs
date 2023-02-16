@@ -1,5 +1,7 @@
 //! Implementation of the `FinalizeBlock` ABCI++ method for the Shell
 
+use std::collections::BTreeMap;
+
 use namada::ledger::gas::TxGasMeter;
 use namada::ledger::pos::namada_proof_of_stake;
 use namada::ledger::pos::types::into_tm_voting_power;
@@ -50,6 +52,9 @@ where
             self.update_state(req.header, req.hash, req.byzantine_validators);
 
         let current_epoch = self.wl_storage.storage.block.epoch;
+        let gas_table: BTreeMap<String, u64> = self
+            .read_storage_key(&parameters::storage::get_gas_table_storage_key())
+            .expect("Missing gas table in storage");
 
         if new_epoch {
             namada::ledger::storage::update_allowed_conversions(
@@ -57,7 +62,7 @@ where
             )?;
 
             let _proposals_result =
-                execute_governance_proposals(self, &mut response)?;
+                execute_governance_proposals(self, &mut response, &gas_table)?;
 
             // Copy the new_epoch + pipeline_len - 1 validator set into
             // new_epoch + pipeline_len
@@ -322,6 +327,7 @@ where
                         .expect("transaction index out of bounds"),
                 ),
                 &mut tx_gas_meter,
+                &gas_table,
                 &mut self.wl_storage.write_log,
                 &self.wl_storage.storage,
                 &mut self.vp_wasm_cache,

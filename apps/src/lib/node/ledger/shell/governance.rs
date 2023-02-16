@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use namada::core::ledger::slash_fund::ADDRESS as slash_fund_address;
 use namada::ledger::events::EventType;
 use namada::ledger::governance::{
@@ -25,6 +27,7 @@ pub struct ProposalsResult {
 pub fn execute_governance_proposals<D, H>(
     shell: &mut Shell<D, H>,
     response: &mut shim::response::FinalizeBlock,
+    gas_table: &BTreeMap<String, u64>,
 ) -> Result<ProposalsResult>
 where
     D: DB + for<'iter> DBIter<'iter> + Sync + 'static,
@@ -94,8 +97,8 @@ where
                         let tx_result = protocol::apply_tx(
                             tx_type,
                             TxIndex::default(),
-                            // Generate a new gas meter so that governance proposals do not account for gas
                             &mut TxGasMeter::new(u64::MAX), // No gas limit for governance proposals
+                            gas_table,
                             &mut shell.wl_storage.write_log,
                             &shell.wl_storage.storage,
                             &mut shell.vp_wasm_cache,
