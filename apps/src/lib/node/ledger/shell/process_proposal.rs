@@ -49,7 +49,7 @@ where
                         | ErrorCodes::Undecryptable
                         | ErrorCodes::InvalidDecryptedChainId
                         | ErrorCodes::ExpiredDecryptedTx
-                        | ErrorCodes::DecryptedGasLimit
+                        | ErrorCodes::TxGasLimit
                 )
             }) {
                 ProposalStatus::Accept as i32
@@ -80,6 +80,8 @@ where
             .read_storage_key(&parameters::storage::get_gas_table_storage_key())
             .expect("Missing gas table in storage");
 
+        let mut wrapper_index = 0;
+
         txs.iter()
             .map(|tx_bytes| {
                 let result = self.process_single_tx(
@@ -89,6 +91,7 @@ where
                     &mut temp_block_gas_meter,
                     block_time,
                     &gas_table,
+                    &mut wrapper_index
                 );
                 if let ErrorCodes::Ok =
                     ErrorCodes::from_u32(result.code).unwrap()
@@ -130,6 +133,7 @@ where
         temp_block_gas_meter: &mut BlockGasMeter,
         block_time: DateTimeUtc,
         gas_table: &BTreeMap<String, u64>,
+        wrapper_index: &mut usize,
     ) -> TxResult {
         let tx = match Tx::try_from(tx_bytes) {
             Ok(tx) => tx,
@@ -196,6 +200,10 @@ where
                     }
                 }
                 TxType::Decrypted(tx) => {
+                    // Increase wrapper index
+                    let tx_index = *wrapper_index;
+                    *wrapper_index += 1; 
+
                     match tx_queue_iter.next() {
                         Some(wrapper) => {
                             if wrapper.tx.tx_hash != tx.hash_commitment() {
@@ -243,7 +251,7 @@ where
                                     let tx_hash = Hash::sha256(tx.code)
                                         .to_string()
                                         .to_ascii_lowercase();
-                                    let tx_gas_required = match gas_table.get(tx_hash.as_str()) {
+                                    let tx_gas = match gas_table.get(tx_hash.as_str()) {
                                         Some(gas) => gas.to_owned(),
                                         None => return TxResult {
                                             // Tx is not whitelisted
@@ -251,11 +259,13 @@ where
                                             info: "Tx is not whitelisted".to_string()   
                                         }
                                     };
-                                    if let Err(_) = TxGasMeter::new(u64::from(&wrapper.tx.gas_limit)).add(tx_gas_required) {
+                                    let inner_tx_gas_limit = temp_wl_storage.storage.tx_queue.get(tx_index).map_or(0, |wrapper| wrapper.gas);
+                                    let mut tx_gas_meter = TxGasMeter::new(inner_tx_gas_limit);
+ if let Err(e) = tx_gas_meter.add(tx_gas) {
                                         
  return TxResult {
-                                            code: ErrorCodes::DecryptedGasLimit.into(),
-                                            info: "Decrypted transaction requires more gas than allocated by the corresponding wrapper".to_string()
+                                            code: ErrorCodes::TxGasLimit.into(),
+                                            info: format!("Decrypted transaction gas error: {}", e)
                                         };
                                     }
                                     
@@ -288,10 +298,18 @@ where
                 TxType::Wrapper(wrapper) => {
                     // Account for gas. This is done even if the transaction is later deemed invalid, to incentivize the proposer to
                     // include only valid transaction and avoid wasting block gas limit
-                    // Max block gas and cumulated block gas
-                                        if let Err(_) = temp_block_gas_meter.finalize_transaction(
-                        
-From::from(&wrapper.gas_limit)                    ) {
+                    // Wrapper gas limit, Max block gas and cumulated block gas
+                    let mut tx_gas_meter = TxGasMeter::new(u64::from(&wrapper.gas_limit));
+                    if let Err(_) =  tx_gas_meter.add_tx_size_gas(tx_bytes.len()) {
+                        temp_block_gas_meter.finalize_transaction(tx_gas_meter.get_current_transaction_gas());
+
+                        return TxResult {
+                            code: ErrorCodes::TxGasLimit.into(),
+                            info: "Wrapper transactions exceeds its gas limit".to_string(),
+                        };
+                    }
+                    
+                                        if let Err(_) = temp_block_gas_meter.finalize_transaction(tx_gas_meter.get_current_transaction_gas()){
                         return TxResult {
                             code: ErrorCodes::BlockGasLimit.into(),
                             
@@ -737,7 +755,9 @@ mod test_process_proposal {
                 #[cfg(not(feature = "mainnet"))]
                 None,
             );
-            shell.enqueue_tx(wrapper);
+            let signed_wrapper = wrapper.sign(&keypair, shell.chain_id.clone(), None).unwrap().to_bytes();
+            let gas_limit = u64::from(&wrapper.gas_limit) - signed_wrapper.len() as u64;
+                        shell.enqueue_tx(wrapper, gas_limit);
             let mut decrypted_tx =
                 Tx::from(TxType::Decrypted(DecryptedTx::Decrypted {
                     tx,
@@ -811,7 +831,8 @@ mod test_process_proposal {
             #[cfg(not(feature = "mainnet"))]
             None,
         );
-        shell.enqueue_tx(wrapper.clone());
+        let signed_wrapper = wrapper.sign(&keypair, shell.chain_id.clone(), None).unwrap().to_bytes();
+            shell.enqueue_tx(wrapper.clone(), u64::from(&wrapper.gas_limit) - signed_wrapper.len() as u64);
 
         let mut tx =
             Tx::from(TxType::Decrypted(DecryptedTx::Undecryptable(wrapper)));
@@ -875,8 +896,9 @@ mod test_process_proposal {
             None,
         );
         wrapper.tx_hash = Hash([0; 32]);
+        let signed_wrapper = wrapper.sign(&keypair, shell.chain_id.clone(), None).unwrap().to_bytes();
 
-        shell.enqueue_tx(wrapper.clone());
+            shell.enqueue_tx(wrapper.clone(), u64::from(&wrapper.gas_limit) - signed_wrapper.len() as u64);
         let mut tx = Tx::from(TxType::Decrypted(DecryptedTx::Undecryptable(
             #[allow(clippy::redundant_clone)]
             wrapper.clone(),
@@ -930,7 +952,8 @@ mod test_process_proposal {
             pow_solution: None,
         };
 
-        shell.enqueue_tx(wrapper.clone());
+        let signed_wrapper = wrapper.sign(&keypair, shell.chain_id.clone(), None).unwrap().to_bytes();
+            shell.enqueue_tx(wrapper.clone(), u64::from(&wrapper.gas_limit) - signed_wrapper.len() as u64);
         let mut signed =
             Tx::from(TxType::Decrypted(DecryptedTx::Undecryptable(
                 #[allow(clippy::redundant_clone)]
@@ -1407,8 +1430,11 @@ mod test_process_proposal {
             #[cfg(not(feature = "mainnet"))]
             None,
         );
+        let signed_wrapper = wrapper.sign(&keypair, shell.chain_id.clone(), None).unwrap().to_bytes();
+            let gas_limit = u64::from(&wrapper.gas_limit) - signed_wrapper.len() as u64;
         let wrapper_in_queue = WrapperTxInQueue {
             tx: wrapper,
+            gas: gas_limit,
             has_valid_pow: false,
         };
         shell.wl_storage.storage.tx_queue.push(wrapper_in_queue);
@@ -1511,8 +1537,11 @@ mod test_process_proposal {
             #[cfg(not(feature = "mainnet"))]
             None,
         );
+        let signed_wrapper_tx = wrapper.sign(&keypair, shell.chain_id.clone(), None).unwrap().to_bytes();
+        let gas_limit = u64::from(&wrapper.gas_limit) - signed_wrapper_tx.len() as u64;
         let wrapper_in_queue = WrapperTxInQueue {
             tx: wrapper,
+            gas: gas_limit,
             has_valid_pow: false,
         };
         shell.wl_storage.storage.tx_queue.push(wrapper_in_queue);

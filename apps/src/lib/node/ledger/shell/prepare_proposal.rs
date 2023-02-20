@@ -167,6 +167,7 @@ where
             let decrypted_txs = self.wl_storage.storage.tx_queue.iter().map(
                 |WrapperTxInQueue {
                      tx,
+                     gas: _,
                      #[cfg(not(feature = "mainnet"))]
                      has_valid_pow,
                  }| {
@@ -370,7 +371,9 @@ mod test_prepare_proposal {
             let wrapper = wrapper_tx
                 .sign(&keypair, shell.chain_id.clone(), None)
                 .expect("Test failed");
-            shell.enqueue_tx(wrapper_tx);
+            let gas_limit = u64::from(&wrapper_tx.gas_limit)
+                - wrapper.to_bytes().len() as u64;
+            shell.enqueue_tx(wrapper_tx, gas_limit);
             expected_wrapper.push(wrapper.clone());
             req.txs.push(wrapper.to_bytes());
         }

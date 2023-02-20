@@ -138,7 +138,14 @@ pub enum ErrorCodes {
     ExpiredTx = 10,
     ExpiredDecryptedTx = 11,
     BlockGasLimit = 12,
-    DecryptedGasLimit = 13,
+    TxGasLimit = 13,
+}
+
+impl ErrorCodes {
+    /// Whether to charge fees depending on the exit code of a transaction
+    pub fn charges_fee(&self) -> bool {
+        matches!(self, Self::Ok | Self::WasmRuntimeError | Self::TxGasLimit)
+    }
 }
 
 impl From<ErrorCodes> for u32 {
@@ -675,12 +682,23 @@ where
 
         // Tx type check
         if let TxType::Wrapper(wrapper) = tx_type {
+            // Tx gas limit
+            let mut gas_meter = TxGasMeter::new(u64::from(&wrapper.gas_limit));
+            if let Err(_) = gas_meter.add_tx_size_gas(tx_bytes.len()) {
+                response.code = ErrorCodes::TxGasLimit.into();
+                response.log =
+                    "Wrapper transactions exceeds its gas limit".to_string();
+                return response;
+            }
+
             // Max block gas
-            let max_block_gas: u64 = self
+            let block_gas_limit: u64 = self
                 .read_storage_key(&parameters::storage::get_max_block_gas_key())
                 .expect("Missing max_block_gas parameter in storage");
-
-            if u64::from(&wrapper.gas_limit) > max_block_gas {
+            let mut block_gas_meter = BlockGasMeter::new(block_gas_limit);
+            if let Err(_) = block_gas_meter
+                .finalize_transaction(gas_meter.get_current_transaction_gas())
+            {
                 response.code = ErrorCodes::BlockGasLimit.into();
                 response.log =
                     "Wrapper transaction exceeds the maximum block gas limit"
@@ -1071,15 +1089,17 @@ mod test_utils {
         }
 
         /// Add a wrapper tx to the queue of txs to be decrypted
-        /// in the current block proposal
+        /// in the current block proposal. Takes the length of the encoded wrapper
+        /// as parameter.
         #[cfg(test)]
-        pub fn enqueue_tx(&mut self, wrapper: WrapperTx) {
+        pub fn enqueue_tx(&mut self, wrapper: WrapperTx, inner_tx_gas: u64) {
             self.shell
                 .wl_storage
                 .storage
                 .tx_queue
                 .push(WrapperTxInQueue {
                     tx: wrapper,
+                    gas: inner_tx_gas,
                     #[cfg(not(feature = "mainnet"))]
                     has_valid_pow: false,
                 });
@@ -1162,8 +1182,15 @@ mod test_utils {
             #[cfg(not(feature = "mainnet"))]
             None,
         );
+        let signed_wrapper = wrapper
+            .sign(&keypair, shell.chain_id.clone(), None)
+            .unwrap()
+            .to_bytes();
+        let gas_limit =
+            u64::from(&wrapper.gas_limit) - signed_wrapper.len() as u64;
         shell.wl_storage.storage.tx_queue.push(WrapperTxInQueue {
             tx: wrapper,
+            gas: gas_limit,
             #[cfg(not(feature = "mainnet"))]
             has_valid_pow: false,
         });
