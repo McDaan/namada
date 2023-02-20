@@ -15,10 +15,11 @@ use namada::ledger::storage_api::StorageRead;
 #[cfg(feature = "abcipp")]
 use namada::proof_of_stake::find_validator_by_raw_hash;
 use namada::proof_of_stake::{
-    delegator_rewards_products_handle, read_current_block_proposer_address,
-    read_last_block_proposer_address, read_pos_params, read_total_stake,
-    read_validator_stake, rewards_accumulator_handle,
-    validator_commission_rate_handle, validator_rewards_products_handle,
+    delegator_rewards_products_handle, delegator_rewards_products_queue_handle,
+    read_current_block_proposer_address, read_last_block_proposer_address,
+    read_pos_params, read_total_stake, read_validator_stake,
+    rewards_accumulator_handle, validator_commission_rate_handle,
+    validator_rewards_products_handle, validator_rewards_products_queue_handle,
     write_last_block_proposer_address,
 };
 use namada::types::address::Address;
@@ -731,6 +732,8 @@ where
         let mut new_rewards_products: HashMap<Address, (Decimal, Decimal)> =
             HashMap::new();
 
+        // Calculate the rewards products for the epoch from the final
+        // accumulator values
         for acc in rewards_accumulator_handle().iter(&self.wl_storage)? {
             let (address, value) = acc?;
 
@@ -770,22 +773,66 @@ where
                 .insert(address, (new_product, new_delegation_product));
             reward_tokens_remaining -= reward;
         }
-        for (
-            address,
-            (new_validator_reward_product, new_delegator_reward_product),
-        ) in new_rewards_products
+        // Write new rewards products to queue in storage (to apply at pipeline
+        // delay)
+        for (address, (new_validator_rp, new_delegator_rp)) in
+            new_rewards_products
+        {
+            validator_rewards_products_queue_handle()
+                .at(&last_epoch)
+                .insert(
+                    &mut self.wl_storage,
+                    address.clone(),
+                    new_validator_rp,
+                )?;
+            delegator_rewards_products_queue_handle()
+                .at(&last_epoch)
+                .insert(&mut self.wl_storage, address, new_delegator_rp)?;
+        }
+        // Find the rewards products in the queue from pipeline offset epochs
+        // ago and write them to the actual rewards products
+        let target_epoch = last_epoch - params.pipeline_len;
+        let mut rewards_products_to_apply: HashMap<
+            Address,
+            (Decimal, Decimal),
+        > = HashMap::new();
+        for elem in validator_rewards_products_queue_handle()
+            .at(&target_epoch)
+            .iter(&self.wl_storage)?
+        {
+            let (address, validator_rp) = elem?;
+            let delegator_rp = delegator_rewards_products_queue_handle()
+                .at(&target_epoch)
+                .get(&self.wl_storage, &address)?
+                .expect(
+                    "Delegator rewards products should contain addresses that \
+                     are in the validator self rewards products",
+                );
+            rewards_products_to_apply
+                .insert(address, (validator_rp, delegator_rp));
+        }
+        for (address, (new_validator_rp, new_delegator_rp)) in
+            rewards_products_to_apply
         {
             validator_rewards_products_handle(&address).insert(
                 &mut self.wl_storage,
-                last_epoch,
-                new_validator_reward_product,
+                target_epoch,
+                new_validator_rp,
             )?;
             delegator_rewards_products_handle(&address).insert(
                 &mut self.wl_storage,
-                last_epoch,
-                new_delegator_reward_product,
+                target_epoch,
+                new_delegator_rp,
             )?;
+            validator_rewards_products_queue_handle()
+                .at(&target_epoch)
+                .remove(&mut self.wl_storage, &address)?;
+            delegator_rewards_products_queue_handle()
+                .at(&target_epoch)
+                .remove(&mut self.wl_storage, &address)?;
         }
+        // May want to remove the empty storage prefix to the rewards product
+        // queue at the target epoch now
 
         // TODO: Figure out how to deal with round-off to a whole number of
         // tokens. May be tricky. TODO: Storing reward products

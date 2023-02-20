@@ -56,8 +56,8 @@ use storage::{
     unbonds_for_source_prefix, unbonds_prefix, validator_address_raw_hash_key,
     validator_max_commission_rate_change_key, BondDetails,
     BondsAndUnbondsDetail, BondsAndUnbondsDetails, ReverseOrdTokenAmount,
-    RewardsAccumulator, SlashedAmount, UnbondDetails, UnbondRecord,
-    ValidatorUniqueUnbonds,
+    RewardsAccumulator, RewardsProductsQueue, SlashedAmount, UnbondDetails,
+    UnbondRecord, ValidatorUniqueUnbonds,
 };
 use thiserror::Error;
 use types::{
@@ -329,6 +329,19 @@ pub fn delegator_rewards_products_handle(
 ) -> RewardsProducts {
     let key = storage::validator_delegation_rewards_product_key(validator);
     RewardsProducts::open(key)
+}
+
+/// Get the storage handle to a validator's self rewards products queue
+pub fn validator_rewards_products_queue_handle() -> RewardsProductsQueue {
+    let key = storage::validator_self_rewards_product_queue_key();
+    RewardsProductsQueue::open(key)
+}
+
+/// Get the storage handle to the delegator rewards products queue associated
+/// with a particular validator
+pub fn delegator_rewards_products_queue_handle() -> RewardsProductsQueue {
+    let key = storage::validator_delegation_rewards_product_queue_key();
+    RewardsProductsQueue::open(key)
 }
 
 /// new init genesis
@@ -3248,3 +3261,89 @@ where
 
     Ok(())
 }
+
+/// Read the stake of a validator including PoS rewards
+pub fn read_validator_effective_stake<S>(
+    storage: &mut S,
+    validator: &Address,
+    params: &PosParams,
+    epoch: Epoch,
+) -> storage_api::Result<token::Amount>
+where
+    S: StorageRead,
+{
+    // TODO:
+    // 1. apply rewards at pipeline, so consider matching across 2 epochs
+    // 2. consider discontinuities in deltas or rewards
+
+    let rewards_products = validator_rewards_products_handle(validator);
+    let deltas = validator_deltas_handle(validator);
+
+    // The future-most relevant reward product is from the previous epoch
+    let last_rp = if epoch == Epoch::default() {
+        Decimal::ONE
+    } else {
+        find_last_reward_product(storage, rewards_products, epoch - 1)
+    };
+
+    // Start with the raw delta in the query epoch (rewards applied after ends
+    // of epoch so they don't affect)
+    let mut total = deltas
+        .get_delta_val(storage, epoch, params)?
+        .unwrap_or_default();
+
+    // TODO: think abt where to stop this loop
+    let mut epoch_it = epoch - 1;
+    while epoch_it.0 > 0 {
+        let rp = find_last_reward_product(storage, rewards_products, epoch_it)?;
+        if let Some(delta) = deltas.get_delta_val(storage, epoch, params)? {
+            total += decimal_mult_i128(last_rp / rp, delta);
+        }
+    }
+    // for ep in 0..epoch.0 {
+    //     let epoch = Epoch(ep);
+    //     let rp = find_last_reward_product(storage, rewards_products, epoch)?;
+    //     if let Some(delta) = deltas.get_delta_val(storage, epoch, params)? {
+    //         total += decimal_mult_i128(last_rp / rp, delta);
+    //     }
+    // }
+
+    Ok(token::Amount::from_change(total))
+}
+
+fn find_last_reward_product<S>(
+    storage: &S,
+    rp_handle: RewardsProducts,
+    epoch: Epoch,
+) -> storage_api::Result<Decimal>
+where
+    S: StorageRead,
+{
+    let mut epoch_it = epoch;
+    loop {
+        if epoch_it == Epoch::default() {
+            return Ok(rp_handle
+                .get(storage, &epoch_it)?
+                .unwrap_or(Decimal::ONE));
+        }
+        if let Some(rp) = rp_handle.get(storage, &epoch_it)? {
+            return Ok(rp);
+        } else {
+            epoch_it.0 -= 1;
+        }
+    }
+}
+
+// TODO
+// pub fn get_effective_stake<S>(storage: &mut S, address: &Address, params:
+// &PosParams, epoch: Epoch) -> storage_api::Result<token::Amount> where
+//     S: StorageRead,
+// {
+//     let is_validator = is_validator(storage, address, params, epoch)?;
+//     let rewards_product = if is_validator {
+//         validator_rewards_products_handle(address).get(storage,
+// &epoch)?.unwrap_or(Decimal::ONE)     } else {
+//         delegator_rewards_products_handle(address).get(storage,
+// &epoch)?.unwrap_or(Decimal::ONE)     };
+//     let stake =
+// }
