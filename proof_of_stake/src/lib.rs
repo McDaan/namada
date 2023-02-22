@@ -56,8 +56,8 @@ use storage::{
     unbonds_for_source_prefix, unbonds_prefix, validator_address_raw_hash_key,
     validator_max_commission_rate_change_key, BondDetails,
     BondsAndUnbondsDetail, BondsAndUnbondsDetails, ReverseOrdTokenAmount,
-    RewardsAccumulator, RewardsProductsQueue, SlashedAmount, UnbondDetails,
-    UnbondRecord, ValidatorUniqueUnbonds,
+    RewardsAccumulator, SlashedAmount, UnbondDetails, UnbondRecord,
+    ValidatorUniqueUnbonds,
 };
 use thiserror::Error;
 use types::{
@@ -331,18 +331,18 @@ pub fn delegator_rewards_products_handle(
     RewardsProducts::open(key)
 }
 
-/// Get the storage handle to a validator's self rewards products queue
-pub fn validator_rewards_products_queue_handle() -> RewardsProductsQueue {
-    let key = storage::validator_self_rewards_product_queue_key();
-    RewardsProductsQueue::open(key)
-}
+// /// Get the storage handle to a validator's self rewards products queue
+// pub fn validator_rewards_products_queue_handle() -> RewardsProductsQueue {
+//     let key = storage::validator_self_rewards_product_queue_key();
+//     RewardsProductsQueue::open(key)
+// }
 
-/// Get the storage handle to the delegator rewards products queue associated
-/// with a particular validator
-pub fn delegator_rewards_products_queue_handle() -> RewardsProductsQueue {
-    let key = storage::validator_delegation_rewards_product_queue_key();
-    RewardsProductsQueue::open(key)
-}
+// /// Get the storage handle to the delegator rewards products queue associated
+// /// with a particular validator
+// pub fn delegator_rewards_products_queue_handle() -> RewardsProductsQueue {
+//     let key = storage::validator_delegation_rewards_product_queue_key();
+//     RewardsProductsQueue::open(key)
+// }
 
 /// new init genesis
 pub fn init_genesis<S>(
@@ -3283,7 +3283,7 @@ where
     let last_rp = if epoch == Epoch::default() {
         Decimal::ONE
     } else {
-        find_last_reward_product(storage, rewards_products, epoch - 1)
+        find_last_reward_product(storage, &rewards_products, epoch - 1)?
     };
 
     // Start with the raw delta in the query epoch (rewards applied after ends
@@ -3295,10 +3295,12 @@ where
     // TODO: think abt where to stop this loop
     let mut epoch_it = epoch - 1;
     while epoch_it.0 > 0 {
-        let rp = find_last_reward_product(storage, rewards_products, epoch_it)?;
+        let rp =
+            find_last_reward_product(storage, &rewards_products, epoch_it)?;
         if let Some(delta) = deltas.get_delta_val(storage, epoch, params)? {
             total += decimal_mult_i128(last_rp / rp, delta);
         }
+        epoch_it.0 -= 1;
     }
     // for ep in 0..epoch.0 {
     //     let epoch = Epoch(ep);
@@ -3313,7 +3315,7 @@ where
 
 fn find_last_reward_product<S>(
     storage: &S,
-    rp_handle: RewardsProducts,
+    rp_handle: &RewardsProducts,
     epoch: Epoch,
 ) -> storage_api::Result<Decimal>
 where

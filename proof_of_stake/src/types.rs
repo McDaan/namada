@@ -181,8 +181,8 @@ pub struct CommissionPair {
 /// Epoched rewards products
 pub type RewardsProducts = LazyMap<Epoch, Decimal>;
 
-/// RewardsProductsQueue
-pub type RewardsProductsQueue = NestedMap<Epoch, LazyMap<Address, Decimal>>;
+// /// RewardsProductsQueue
+// pub type RewardsProductsQueue = NestedMap<Epoch, LazyMap<Address, Decimal>>;
 
 /// Consensus validator rewards accumulator (for tracking the fractional block
 /// rewards owed over the course of an epoch)

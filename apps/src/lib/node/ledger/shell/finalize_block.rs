@@ -15,12 +15,11 @@ use namada::ledger::storage_api::StorageRead;
 #[cfg(feature = "abcipp")]
 use namada::proof_of_stake::find_validator_by_raw_hash;
 use namada::proof_of_stake::{
-    delegator_rewards_products_handle, delegator_rewards_products_queue_handle,
-    read_current_block_proposer_address, read_last_block_proposer_address,
-    read_pos_params, read_total_stake, read_validator_stake,
-    rewards_accumulator_handle, validator_commission_rate_handle,
-    validator_rewards_products_handle, validator_rewards_products_queue_handle,
-    write_last_block_proposer_address,
+    delegator_rewards_products_handle, read_current_block_proposer_address,
+    read_last_block_proposer_address, read_pos_params, read_total_stake,
+    read_validator_stake, rewards_accumulator_handle, update_total_deltas,
+    update_validator_deltas, validator_commission_rate_handle,
+    validator_rewards_products_handle, write_last_block_proposer_address,
 };
 use namada::types::address::Address;
 #[cfg(feature = "abcipp")]
@@ -728,9 +727,12 @@ where
         // to the accumulator storage earlier in apply_inflation
 
         // TODO: think about changing the reward to Decimal
-        let mut reward_tokens_remaining = pos_minted_tokens;
-        let mut new_rewards_products: HashMap<Address, (Decimal, Decimal)> =
+        let mut total_reward_amount = 0_u64;
+        let mut new_rewards: HashMap<Address, (u64, Decimal, Decimal)> =
             HashMap::new();
+        // TODO: should this be pipeline relative to the current (new) epoch or
+        // the previous one from which these rewards are derived?
+        let pipeline_epoch = current_epoch + params.pipeline_len;
 
         // Calculate the rewards products for the epoch from the final
         // accumulator values
@@ -769,70 +771,38 @@ where
                 * (Decimal::ONE
                     + (Decimal::ONE - commission_rate) * Decimal::from(reward)
                         / stake);
-            new_rewards_products
-                .insert(address, (new_product, new_delegation_product));
-            reward_tokens_remaining -= reward;
+            new_rewards
+                .insert(address, (reward, new_product, new_delegation_product));
+            total_reward_amount += reward;
         }
-        // Write new rewards products to queue in storage (to apply at pipeline
-        // delay)
-        for (address, (new_validator_rp, new_delegator_rp)) in
-            new_rewards_products
+        // Write new rewards products to storage and update deltas
+        for (validator, (reward, new_validator_rp, new_delegator_rp)) in
+            new_rewards
         {
-            validator_rewards_products_queue_handle()
-                .at(&last_epoch)
-                .insert(
-                    &mut self.wl_storage,
-                    address.clone(),
-                    new_validator_rp,
-                )?;
-            delegator_rewards_products_queue_handle()
-                .at(&last_epoch)
-                .insert(&mut self.wl_storage, address, new_delegator_rp)?;
-        }
-        // Find the rewards products in the queue from pipeline offset epochs
-        // ago and write them to the actual rewards products
-        let target_epoch = last_epoch - params.pipeline_len;
-        let mut rewards_products_to_apply: HashMap<
-            Address,
-            (Decimal, Decimal),
-        > = HashMap::new();
-        for elem in validator_rewards_products_queue_handle()
-            .at(&target_epoch)
-            .iter(&self.wl_storage)?
-        {
-            let (address, validator_rp) = elem?;
-            let delegator_rp = delegator_rewards_products_queue_handle()
-                .at(&target_epoch)
-                .get(&self.wl_storage, &address)?
-                .expect(
-                    "Delegator rewards products should contain addresses that \
-                     are in the validator self rewards products",
-                );
-            rewards_products_to_apply
-                .insert(address, (validator_rp, delegator_rp));
-        }
-        for (address, (new_validator_rp, new_delegator_rp)) in
-            rewards_products_to_apply
-        {
-            validator_rewards_products_handle(&address).insert(
+            validator_rewards_products_handle(&validator).insert(
                 &mut self.wl_storage,
-                target_epoch,
+                last_epoch,
                 new_validator_rp,
             )?;
-            delegator_rewards_products_handle(&address).insert(
+            delegator_rewards_products_handle(&validator).insert(
                 &mut self.wl_storage,
-                target_epoch,
+                last_epoch,
                 new_delegator_rp,
             )?;
-            validator_rewards_products_queue_handle()
-                .at(&target_epoch)
-                .remove(&mut self.wl_storage, &address)?;
-            delegator_rewards_products_queue_handle()
-                .at(&target_epoch)
-                .remove(&mut self.wl_storage, &address)?;
+            update_validator_deltas(
+                &mut self.wl_storage,
+                &params,
+                &validator,
+                token::Change::from(reward),
+                pipeline_epoch,
+            )?;
         }
-        // May want to remove the empty storage prefix to the rewards product
-        // queue at the target epoch now
+        update_total_deltas(
+            &mut self.wl_storage,
+            &params,
+            token::Change::from(total_reward_amount),
+            pipeline_epoch,
+        )?;
 
         // TODO: Figure out how to deal with round-off to a whole number of
         // tokens. May be tricky. TODO: Storing reward products
@@ -840,6 +810,7 @@ where
         // TODO: perhaps only upon withdrawal. But by truncating at
         // withdrawal, may leave tokens in TDOD: the PoS account
         // that are not accounted for. Is this an issue?
+        let reward_tokens_remaining = pos_minted_tokens - total_reward_amount;
         if reward_tokens_remaining > 0 {
             // TODO: do something here?
         }
