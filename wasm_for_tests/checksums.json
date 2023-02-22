@@ -1,0 +1,13 @@
+{
+    "tx_memory_limit.wasm": "tx_memory_limit.f244b64cdbfaaea7d58dccd1ec746b9610c565411e0c712ecc65453a8fd82efc.wasm",
+    "tx_mint_tokens.wasm": "tx_mint_tokens.70b3a95ec917d639a260a28dc368ee3374437e391932c99a1744e910b8e5ec9e.wasm",
+    "tx_no_op.wasm": "tx_no_op.6dc80c405ac210b40b4d38300472dc5a3adc331f018d0b0bb3e48111427bd011.wasm",
+    "tx_proposal_code.wasm": "tx_proposal_code.26b47927111fb0af0e3eabd16a9111d9c34baeee46ed7cf0cd5475414540bce5.wasm",
+    "tx_read_storage_key.wasm": "tx_read_storage_key.60e23ade31b38a7c8ad54cc434898f6be614ab4904f1be0c196c725cdc6eb4b0.wasm",
+    "tx_write.wasm": "tx_write.eb1c317c9efc878dabcdffdb260a864618ba5c930fca34db0093bcb0084726b4.wasm",
+    "vp_always_false.wasm": "vp_always_false.720a37cf7a168395719dec1e5d53c61fcb41b009e50e162d195810496b6f72ad.wasm",
+    "vp_always_true.wasm": "vp_always_true.a7acf9d7229c7a3915f5803f99d015c3b431ea6d870729ced990cd9409086495.wasm",
+    "vp_eval.wasm": "vp_eval.3be29690f82c2717b9da933bc0880fcf9cbb9707ff5aed9630383df54c34d499.wasm",
+    "vp_memory_limit.wasm": "vp_memory_limit.82242306ce7f58a896d037be2252dbba3c37df6f42906cc100984ee93fc35976.wasm",
+    "vp_read_storage_key.wasm": "vp_read_storage_key.076d44adbc4ed30d200b1216fa6a1c15b2dc5dc7d6d2001c0e0425e83b9692ea.wasm"
+}

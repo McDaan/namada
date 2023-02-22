@@ -22,6 +22,11 @@ wasms += tx_proposal_code
 all: 
 	make $(wasms)
 	make opt-wasm
+	make checksum-wasm
+
+# need python
+checksum-wasm:
+	python3 checksums.py
 
 # `cargo check` all wasms
 check:
@@ -78,4 +83,4 @@ deps:
 opt-wasm:
 	@for file in $(shell ls ../*.wasm); do wasm-opt -Oz -o $${file} $${file}; done
 
-.PHONY : all check test clippy fmt fmt-check clean deps opt-wasm
+.PHONY : all check checksum-wasm test clippy fmt fmt-check clean deps opt-wasm

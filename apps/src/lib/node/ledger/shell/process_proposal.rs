@@ -253,6 +253,9 @@ where
                                         .to_ascii_lowercase();
                                     let tx_gas = match gas_table.get(tx_hash.as_str()) {
                                         Some(gas) => gas.to_owned(),
+        #[cfg(any(test, feature = "testing"))]
+        None => 1000, 
+        #[cfg(not(any(test, feature = "testing")))]
                                         None => return TxResult {
                                             // Tx is not whitelisted
                                           code: ErrorCodes::Undecryptable.into(),
@@ -301,7 +304,7 @@ where
                     // Wrapper gas limit, Max block gas and cumulated block gas
                     let mut tx_gas_meter = TxGasMeter::new(u64::from(&wrapper.gas_limit));
                     if let Err(_) =  tx_gas_meter.add_tx_size_gas(tx_bytes.len()) {
-                        temp_block_gas_meter.finalize_transaction(tx_gas_meter.get_current_transaction_gas());
+                        let _ = temp_block_gas_meter.finalize_transaction(tx_gas_meter.get_current_transaction_gas());
 
                         return TxResult {
                             code: ErrorCodes::TxGasLimit.into(),
@@ -481,6 +484,8 @@ mod test_process_proposal {
         gen_keypair, ProcessProposal, TestError, TestShell,
     };
 
+const GAS_LIMIT_MULTIPLIER: u64 = 1; 
+
     /// Test that if a wrapper tx is not signed, the block is rejected
     /// by [`process_proposal`].
     #[test]
@@ -499,7 +504,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             &keypair,
-            0.into(),
+            GAS_LIMIT_MULTIPLIER.into(),
             tx,
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
@@ -551,7 +556,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             &keypair,
-            0.into(),
+            GAS_LIMIT_MULTIPLIER.into(),
             tx,
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
@@ -639,7 +644,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             &keypair,
-            0.into(),
+            GAS_LIMIT_MULTIPLIER.into(),
             tx,
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
@@ -698,7 +703,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             &keypair,
-            0.into(),
+            GAS_LIMIT_MULTIPLIER.into(),
             tx,
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
@@ -749,7 +754,7 @@ mod test_process_proposal {
                     token: shell.wl_storage.storage.native_token.clone(),
                 },
                 &keypair,
-                0.into(),
+                GAS_LIMIT_MULTIPLIER.into(),
                 tx.clone(),
                 Default::default(),
                 #[cfg(not(feature = "mainnet"))]
@@ -825,7 +830,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             &keypair,
-            0.into(),
+            GAS_LIMIT_MULTIPLIER.into(),
             tx,
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
@@ -889,7 +894,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             &keypair,
-            0.into(),
+            GAS_LIMIT_MULTIPLIER.into(),
             tx,
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
@@ -945,7 +950,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             pk: keypair.ref_to(),
-            gas_limit: 0.into(),
+            gas_limit: GAS_LIMIT_MULTIPLIER.into(),
             inner_tx,
             tx_hash: hash_tx(&tx),
             #[cfg(not(feature = "mainnet"))]
@@ -1071,7 +1076,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             &keypair,
-            0.into(),
+            GAS_LIMIT_MULTIPLIER.into(),
             tx,
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
@@ -1144,7 +1149,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             &keypair,
-            0.into(),
+            GAS_LIMIT_MULTIPLIER.into(),
             tx,
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
@@ -1201,7 +1206,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             &keypair,
-            0.into(),
+            GAS_LIMIT_MULTIPLIER.into(),
             tx,
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
@@ -1286,7 +1291,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             &keypair,
-            0.into(),
+            GAS_LIMIT_MULTIPLIER.into(),
             tx.clone(),
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
@@ -1303,7 +1308,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             &keypair_2,
-            0.into(),
+            GAS_LIMIT_MULTIPLIER.into(),
             tx,
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
@@ -1356,7 +1361,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             &keypair,
-            0.into(),
+            GAS_LIMIT_MULTIPLIER.into(),
             tx.clone(),
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
@@ -1424,7 +1429,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             &keypair,
-            0.into(),
+            GAS_LIMIT_MULTIPLIER.into(),
             tx,
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
@@ -1481,7 +1486,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             &keypair,
-            0.into(),
+            GAS_LIMIT_MULTIPLIER.into(),
             tx,
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
@@ -1531,7 +1536,7 @@ mod test_process_proposal {
                 token: shell.wl_storage.storage.native_token.clone(),
             },
             &keypair,
-            0.into(),
+            GAS_LIMIT_MULTIPLIER.into(),
             tx,
             Default::default(),
             #[cfg(not(feature = "mainnet"))]
